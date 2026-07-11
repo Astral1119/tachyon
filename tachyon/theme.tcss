@@ -1,0 +1,152 @@
+/* Tachyon theme — near-black ground, cyan signal, magenta alarm. */
+
+Screen {
+    background: $bg;
+    color: $text;
+}
+
+#header {
+    height: 1;
+    margin-bottom: 1;
+    background: $chrome-bg;
+    color: $text;
+}
+
+#hints {
+    height: 1;
+    background: $chrome-bg;
+}
+
+#body {
+    height: 1fr;
+}
+
+#col-left, #col-right {
+    width: 30;
+    height: 1fr;
+}
+
+#col-center {
+    width: 1fr;
+    height: 1fr;
+}
+
+.panel {
+    border: round $accent-dim;
+    border-title-color: $accent;
+    border-title-style: bold;
+    background: $panel-bg;
+    padding: 0 1;
+}
+
+.panel:focus, .panel:focus-within {
+    border: round $accent;
+}
+
+Terminal {
+    height: 3fr;
+    border: round $accent-dim;
+    border-title-color: $hot;
+    border-title-style: bold;
+    background: $term-bg;
+    padding: 0 2;
+}
+
+Terminal:focus {
+    border: round $accent;
+}
+
+#panel-system { height: 7; }
+#panel-cpu    { height: 13; }
+#panel-mem    { height: 8; }
+#panel-proc   { height: 1fr; }
+
+/* The input matrix is theatre; it costs shell rows, so it opts in (^SPC k). */
+#panel-keys   { height: 7; display: none; }
+#body.keys-on #panel-keys { display: block; }
+#center-bottom { height: 13; }
+#panel-files  { width: 1fr; height: 1fr; }
+#panel-repo   { width: 48; height: 1fr; }
+
+#panel-globe  { height: 14; }
+#panel-net    { height: 10; }
+#panel-conn   { height: 1fr; }
+#panel-disk   { height: 9; }
+
+/* Responsive rails: preserve a useful shell before preserving decoration. */
+#body.rail #col-right {
+    display: none;
+}
+
+#body.compact #col-left,
+#body.compact #col-right,
+#body.compact #panel-keys,
+#body.compact #panel-repo {
+    display: none;
+}
+
+#body.short #center-bottom,
+#body.short #panel-keys {
+    display: none;
+}
+
+/* Zen mode: terminal only. */
+#body.zen #col-left,
+#body.zen #col-right,
+#body.zen #panel-keys,
+#body.zen #center-bottom {
+    display: none;
+}
+
+/* A short viewport can still open the filesystem as a dedicated deck. */
+#body.files-only #col-left,
+#body.files-only #col-right,
+#body.files-only Terminal,
+#body.files-only #panel-keys,
+#body.files-only #panel-repo {
+    display: none;
+}
+
+#body.files-only #center-bottom {
+    display: block;
+    height: 1fr;
+}
+
+#body.files-only #panel-files {
+    display: block;
+    height: 1fr;
+}
+
+/* tmux-style magnify: one telemetry instrument fills the deck.  The
+   zoom-host rules must out-rank the id-based rail/compact hides above. */
+#body.zoomed #col-left,
+#body.zoomed #col-center,
+#body.zoomed #col-right {
+    display: none;
+}
+
+#body.zoomed #col-left.zoom-host,
+#body.zoomed #col-right.zoom-host {
+    display: block;
+    width: 1fr;
+}
+
+#body.zoomed .zoom-host > .panel {
+    display: none;
+}
+
+#body.zoomed .zoom-host > .panel.zoom-target {
+    display: block;
+    height: 1fr;
+}
+
+/* Expanded telemetry view; mounted widgets retain their accumulated state. */
+#body.overview #col-center {
+    display: none;
+}
+
+#body.overview #col-left,
+#body.overview #col-right {
+    display: block;
+    width: 1fr;
+}
