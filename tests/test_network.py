@@ -110,6 +110,26 @@ def test_visible_partitions_on_macos_keeps_root_and_external_volumes() -> None:
     assert [partition.mountpoint for partition in visible] == ["/", "/Volumes/WORK"]
 
 
+def test_visible_partitions_on_windows_keeps_drives_and_skips_empty_media() -> None:
+    partitions = [
+        Partition("C:\\", "C:\\", "NTFS", "rw,fixed"),
+        Partition("D:\\", "D:\\", "ntfs", "rw,fixed"),
+        Partition("D:\\", "D:\\", "ntfs", "rw,fixed"),
+        Partition("E:\\", "E:\\", "", "cdrom"),
+        Partition("F:\\", "F:\\", "cdfs", "ro,cdrom"),
+        Partition("\\\\nas\\share", "\\\\nas\\share", "smb", "rw"),
+        Partition("relative", "relative", "ntfs", "rw"),
+    ]
+
+    visible = _visible_partitions(partitions, platform="win32")
+
+    assert [partition.mountpoint for partition in visible] == [
+        "C:\\",
+        "D:\\",
+        "\\\\nas\\share",
+    ]
+
+
 @pytest.mark.parametrize("width", [1, 2, 4, 8, 10, 17, 18, 26, 32, 50, 80])
 def test_disk_row_has_exact_width_and_never_wraps(width: int) -> None:
     row = _disk_row("EXTRA-LONG-ARCHIVE", 73.0, 10**12, width)

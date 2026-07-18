@@ -393,12 +393,25 @@ def _visible_partitions(partitions: Iterable[Any], *, platform: str = sys.platfo
     for part in partitions:
         mountpoint = os.path.normpath(str(part.mountpoint))
         fstype = str(getattr(part, "fstype", "")).lower()
-        if not mountpoint.startswith(os.sep) or fstype in _PSEUDO_FILESYSTEMS:
+        if platform == "win32":
+            rooted = mountpoint[1:2] == ":" or mountpoint.startswith(("\\\\", os.sep))
+        else:
+            rooted = mountpoint.startswith(os.sep)
+        if not rooted or fstype in _PSEUDO_FILESYSTEMS:
             continue
-        if any(_is_under(mountpoint, root) for root in ("/dev", "/proc", "/run", "/sys")):
-            continue
-        if platform == "darwin" and not (mountpoint == "/" or _is_under(mountpoint, "/Volumes")):
-            continue
+        if platform == "win32":
+            # Media-less removable/optical drives report an empty fstype and
+            # would raise on disk_usage().
+            opts = str(getattr(part, "opts", "")).lower()
+            if not fstype or "cdrom" in opts.split(","):
+                continue
+        else:
+            if any(_is_under(mountpoint, root) for root in ("/dev", "/proc", "/run", "/sys")):
+                continue
+            if platform == "darwin" and not (
+                mountpoint == "/" or _is_under(mountpoint, "/Volumes")
+            ):
+                continue
 
         mount_key = os.path.normcase(os.path.abspath(mountpoint))
         device = str(getattr(part, "device", ""))

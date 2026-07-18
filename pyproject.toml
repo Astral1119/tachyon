@@ -6,8 +6,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "psutil>=7.2.2",
-    "ptyprocess>=0.7.0",
+    "ptyprocess>=0.7.0; sys_platform != 'win32'",
     "pyte>=0.8.2",
+    "pywinpty>=2.0.12; sys_platform == 'win32'",
     "textual>=8.2.8",
 ]
 

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import shlex
+import os
 from pathlib import Path
 
 import pyte
 import pytest
 from textual.app import App, ComposeResult
 
-from tachyon.widgets.term import Terminal, _rich_color, _TerminalScreen
+from tachyon.widgets.term import Terminal, _cd_command, _rich_color, _TerminalScreen
+
+requires_posix = pytest.mark.skipif(os.name != "posix", reason="spawns a POSIX shell")
 
 
 def _screen_text(terminal: Terminal) -> str:
@@ -142,7 +144,24 @@ def test_change_directory_quotes_path(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setattr(terminal, "_write", capture)
 
     assert terminal.change_directory(target) is True
-    assert writes == [f"\x15cd {shlex.quote(str(target))}\r"]
+    prefix = "\x1b" if os.name == "nt" else "\x15"
+    assert writes == [f"{prefix}{_cd_command(str(target), '/bin/sh')}\r"]
+
+
+def test_cd_command_posix_shell_quotes() -> None:
+    assert _cd_command("/tmp/a b", "/bin/zsh", windows=False) == "cd '/tmp/a b'"
+
+
+def test_cd_command_windows_powershell_uses_literal_single_quotes() -> None:
+    command = _cd_command(
+        "C:\\Users\\o'brien", "C:\\Program Files\\PowerShell\\7\\pwsh.exe", windows=True
+    )
+    assert command == "cd 'C:\\Users\\o''brien'"
+
+
+def test_cd_command_windows_cmd_switches_drives() -> None:
+    command = _cd_command("D:\\data files", "C:\\Windows\\system32\\cmd.exe", windows=True)
+    assert command == 'cd /d "D:\\data files"'
 
 
 def test_output_buffer_rejects_stale_generations() -> None:
@@ -176,6 +195,7 @@ class _ShellApp(App[None]):
         )
 
 
+@requires_posix
 @pytest.mark.parametrize("no_color", [False, True])
 def test_shell_lifecycle_dimensions_output_and_restart(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, no_color: bool
@@ -253,6 +273,21 @@ def test_sanitized_environment_keeps_foreign_venvs(monkeypatch: pytest.MonkeyPat
     base = {"VIRTUAL_ENV": "/home/operator/work/.venv", "PATH": "/usr/bin:/bin"}
 
     assert _sanitized_environment(base) == base
+
+
+def test_sanitized_environment_finds_path_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows spells the variable ``Path``; the scrub must still find it."""
+    import sys
+
+    from tachyon.widgets.term import _sanitized_environment
+
+    monkeypatch.setattr(sys, "prefix", "/opt/project/.venv")
+    monkeypatch.setattr(sys, "base_prefix", "/usr/local/python3.12")
+    env = _sanitized_environment({"Path": os.pathsep.join(("/opt/project/.venv/bin", "/usr/bin"))})
+
+    assert env == {"Path": "/usr/bin"}
 
 
 def test_clear_buffer_wipes_scrollback(monkeypatch: pytest.MonkeyPatch) -> None:

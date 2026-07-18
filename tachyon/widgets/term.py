@@ -1,18 +1,19 @@
 """Embedded terminal: a real PTY-backed shell rendered through pyte into Textual.
 
 Architecture:
-  ptyprocess spawns $SHELL attached to a pty.  A daemon thread blocks on
-  os.read() of the pty master and coalesces bytes for the Textual event loop,
-  where they are fed to a pyte ByteStream/HistoryScreen pair.  The widget
-  renders the pyte screen buffer line-by-line via render_line(), and translates
-  Textual key events back into the byte sequences a terminal would send.
+  pty_backend spawns the host shell attached to a pty (ptyprocess on POSIX,
+  ConPTY via pywinpty on Windows).  A daemon thread blocks on the session's
+  read() and coalesces bytes for the Textual event loop, where they are fed to
+  a pyte ByteStream/HistoryScreen pair.  The widget renders the pyte screen
+  buffer line-by-line via render_line(), and translates Textual key events back
+  into the byte sequences a terminal would send.
 """
 
 from __future__ import annotations
 
+import ntpath
 import os
 import shlex
-import shutil
 import string
 import sys
 import threading
@@ -22,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-import ptyprocess
 import pyte
 from pyte.screens import StaticDefaultDict
 from rich.segment import Segment
@@ -32,7 +32,7 @@ from textual.message import Message
 from textual.strip import Strip
 from textual.widget import Widget
 
-from tachyon import palette
+from tachyon import palette, pty_backend
 from tachyon.widgets.resize import EdgeResize
 
 # pyte stores private DEC modes shifted left by 5 bits.
@@ -284,13 +284,32 @@ def _sanitized_environment(base: dict[str, str] | None = None) -> dict[str, str]
         return env
     for name in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "PYTHONHOME"):
         env.pop(name, None)
-    prefix = os.path.abspath(sys.prefix)
-    env["PATH"] = os.pathsep.join(
+    # Windows spells the variable "Path" and compares paths case-insensitively.
+    path_key = next((key for key in env if key.upper() == "PATH"), "PATH")
+    prefix = os.path.normcase(os.path.abspath(sys.prefix))
+    env[path_key] = os.pathsep.join(
         entry
-        for entry in env.get("PATH", "").split(os.pathsep)
-        if entry and not os.path.abspath(entry).startswith(prefix + os.sep)
+        for entry in env.get(path_key, "").split(os.pathsep)
+        if entry and not os.path.normcase(os.path.abspath(entry)).startswith(prefix + os.sep)
     )
     return env
+
+
+# readline/zle kill-to-start; cmd and PSReadLine clear the input line on ESC.
+_KILL_LINE = "\x1b" if pty_backend.IS_WINDOWS else "\x15"
+
+
+def _cd_command(absolute: str, shell: str, *, windows: bool = pty_backend.IS_WINDOWS) -> str:
+    """A ``cd`` to ``absolute``, quoted for the shell that will execute it."""
+    if not windows:
+        return f"cd {shlex.quote(absolute)}"
+    name = ntpath.basename(shell).lower()
+    if name.startswith(("pwsh", "powershell")):
+        # PowerShell single quotes are literal; embedded ones double up.
+        escaped = absolute.replace("'", "''")
+        return f"cd '{escaped}'"
+    # cmd.exe: /d also switches drives; Windows paths cannot contain '"'.
+    return f'cd /d "{absolute}"'
 
 
 _APPLICATION_CURSOR = {
@@ -347,10 +366,10 @@ class Terminal(EdgeResize, Widget, can_focus=True):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self._command = command or [os.environ.get("SHELL") or shutil.which("zsh") or "/bin/sh"]
+        self._command = command or pty_backend.default_shell()
         self._cwd = Path(cwd).expanduser() if cwd is not None else Path.home()
         self._history_lines = max(int(history_lines), 1)
-        self._pty: ptyprocess.PtyProcess | None = None
+        self._pty: pty_backend.PtySession | None = None
         self._reader: threading.Thread | None = None
         self._screen = _TerminalScreen(80, 24, history=self._history_lines)
         self._stream = pyte.ByteStream(self._screen)
@@ -396,7 +415,7 @@ class Terminal(EdgeResize, Widget, can_focus=True):
 
     def _invalidate_session(
         self,
-    ) -> tuple[ptyprocess.PtyProcess | None, threading.Thread | None]:
+    ) -> tuple[pty_backend.PtySession | None, threading.Thread | None]:
         pty, self._pty = self._pty, None
         reader, self._reader = self._reader, None
         self._dead = True
@@ -409,7 +428,7 @@ class Terminal(EdgeResize, Widget, can_focus=True):
         return pty, reader
 
     @staticmethod
-    def _close_pty(pty: ptyprocess.PtyProcess | None, reader: threading.Thread | None) -> None:
+    def _close_pty(pty: pty_backend.PtySession | None, reader: threading.Thread | None) -> None:
         if pty is None or pty.closed:
             return
 
@@ -420,10 +439,10 @@ class Terminal(EdgeResize, Widget, can_focus=True):
         # non-contentious.
         try:
             terminated = not pty.isalive() or pty.terminate(force=True)
-        except (OSError, ptyprocess.PtyProcessError):
+        except pty_backend.PTY_ERRORS:
             try:
                 terminated = not pty.isalive()
-            except (OSError, ptyprocess.PtyProcessError):
+            except pty_backend.PTY_ERRORS:
                 terminated = True  # Already reaped elsewhere.
         if not terminated:
             return
@@ -431,7 +450,7 @@ class Terminal(EdgeResize, Widget, can_focus=True):
         if reader is not None and reader is not threading.current_thread():
             reader.join(timeout=0.5)
         if reader is None or not reader.is_alive():
-            with suppress(OSError, ptyprocess.PtyProcessError):
+            with suppress(*pty_backend.PTY_ERRORS):
                 pty.close(force=False)
 
     def _spawn(self) -> None:
@@ -443,9 +462,7 @@ class Terminal(EdgeResize, Widget, can_focus=True):
         stream = pyte.ByteStream(screen)
         env = _sanitized_environment()
         env.update(TERM="xterm-256color", COLORTERM="truecolor", TACHYON="1")
-        pty = ptyprocess.PtyProcess.spawn(
-            self._command, dimensions=(rows, cols), env=env, cwd=str(self._cwd)
-        )
+        pty = pty_backend.spawn(self._command, dimensions=(rows, cols), env=env, cwd=str(self._cwd))
 
         self._generation += 1
         generation = self._generation
@@ -539,12 +556,9 @@ class Terminal(EdgeResize, Widget, can_focus=True):
             self._output_condition.notify_all()
             return data, more
 
-    def _read_loop(self, pty: ptyprocess.PtyProcess, generation: int) -> None:
+    def _read_loop(self, pty: pty_backend.PtySession, generation: int) -> None:
         while True:
-            try:
-                data = os.read(pty.fd, 65536)
-            except OSError:
-                break
+            data = pty.read(65536)
             if not data:
                 break
             if not self._queue_output(generation, data):
@@ -673,7 +687,7 @@ class Terminal(EdgeResize, Widget, can_focus=True):
             data = data.encode("utf-8", "ignore")
         try:
             return self._pty.write(data) == len(data)
-        except (OSError, ValueError):
+        except (*pty_backend.PTY_ERRORS, ValueError):
             return False
 
     def send_signal_char(self, char: str) -> None:
@@ -683,13 +697,13 @@ class Terminal(EdgeResize, Widget, can_focus=True):
     def execute(self, command: str, clear_line: bool = False) -> bool:
         """Submit a command to the shell, optionally clearing typed input."""
         self._history_end()
-        prefix = "\x15" if clear_line else ""  # readline/zle kill-to-start
+        prefix = _KILL_LINE if clear_line else ""
         return self._write(prefix + command + "\r")
 
     def change_directory(self, path: str | os.PathLike[str]) -> bool:
         """Safely submit a ``cd`` to an absolute, shell-quoted path."""
         absolute = os.path.abspath(os.path.expanduser(os.fspath(path)))
-        return self.execute(f"cd {shlex.quote(absolute)}", clear_line=True)
+        return self.execute(_cd_command(absolute, self._command[0]), clear_line=True)
 
     def clear_buffer(self) -> None:
         """cmd+K semantics: wipe scrollback and let the shell repaint its prompt.

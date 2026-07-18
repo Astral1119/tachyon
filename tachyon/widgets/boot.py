@@ -21,7 +21,7 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Static
 
-from tachyon import palette
+from tachyon import palette, pty_backend
 
 # 5-row block font for the title card, letters used by "TACHYON".
 _FONT = {
@@ -48,7 +48,8 @@ def _real_facts() -> dict[str, str]:
         "host": socket.gethostname().removesuffix(".local"),
         "user": getpass.getuser(),
         "os": f"{platform.system()} {platform.release()} {platform.machine()}",
-        "shell": os.environ.get("SHELL", "/bin/sh"),
+        "shell": os.path.basename(pty_backend.default_shell()[0]),
+        "pty_dev": "conpty channel" if pty_backend.IS_WINDOWS else "/dev/ptmx",
         "cores": str(psutil.cpu_count() or "?"),
     }
     with suppress(Exception):
@@ -78,7 +79,7 @@ def _boot_script() -> list[tuple[str, float]]:
         ("com.tachyon.PyteVTEngine: xterm-256color translation online", fast),
         ("com.tachyon.TrololoBootScreen kmod start", fast),
         ("mbinit: done [64 MB total pool size, (42/21) split]", 0.3),
-        (f"pty_bridge: /dev/ptmx acquired for {f['user']}@{f['host']}", fast),
+        (f"pty_bridge: {f['pty_dev']} acquired for {f['user']}@{f['host']}", fast),
         (f"spawning shell {f['shell']} — environment scrubbed of host venv", fast),
         ("keybind_matrix: leader chord ctrl+space armed, fn aliases standing by", fast),
         ("filesystem_lattice: shell-follow uplink locked at 1 Hz", fast),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import os
 import platform
 import subprocess
 from collections import deque
@@ -84,8 +83,10 @@ class SystemPanel(EdgeResize, Static):
             os_line = f"{platform.system()} {platform.release()}"
         kernel = f"{platform.system()} {platform.release()} {platform.machine()}"
         try:
-            load = " ".join(f"{v:.2f}" for v in os.getloadavg())
-        except OSError:
+            # psutil emulates load averages on Windows, where os.getloadavg
+            # does not exist at all.
+            load = " ".join(f"{v:.2f}" for v in psutil.getloadavg())
+        except (OSError, AttributeError):
             load = "—"
         nproc = len(psutil.pids())
         rows = [

@@ -32,6 +32,12 @@ The embedded shell gets a scrubbed environment: the virtualenv Tachyon itself
 runs in (e.g. under `uv run`) is stripped from `PATH` and `VIRTUAL_ENV`, so
 working on Python projects inside Tachyon behaves like a fresh terminal.
 
+Tachyon runs on macOS, Linux, and Windows. On POSIX systems the embedded shell
+is `$SHELL` on a ptyprocess PTY; on Windows it is PowerShell (`pwsh`, then
+`powershell`, then `cmd.exe`) on a ConPTY session via
+[pywinpty](https://github.com/andfoy/pywinpty). Use Windows Terminal for best
+results — legacy conhost struggles with Textual's escape sequences.
+
 Tachyon adapts to the viewport instead of requiring a fixed terminal size:
 
 - **122 columns and wider:** full three-column command center.
