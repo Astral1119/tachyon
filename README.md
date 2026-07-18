@@ -190,12 +190,7 @@ its replacement.
 
 ## Development
 
-```sh
-uv run pytest -q
-uv run ruff check .
-uv run ruff format --check .
-uv build
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests, and working notes.
 
 ## Limits
 
