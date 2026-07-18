@@ -165,7 +165,8 @@ telemetry panels stop sampling while hidden, held, or in shell focus mode.
 tachyon/
 ├── app.py            responsive decks, status rails, and global actions
 ├── config.py         validated CLI and environment configuration
-├── palette.py        shared color vocabulary
+├── palette.py        shared color vocabulary and themes
+├── pty_backend.py    cross-platform PTY seam (ptyprocess POSIX / pywinpty ConPTY)
 ├── theme.tcss        layout, panel chrome, and responsive states
 └── widgets/
     ├── term.py       PTY ↔ pyte ↔ Textual terminal core
